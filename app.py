@@ -157,7 +157,10 @@ def login():
         if check_credentials(username, password):
             st.session_state.authenticated = True
             st.session_state.user = username
-            st.experimental_rerun()
+            if hasattr(st, 'rerun'):
+                st.rerun()
+            else:
+                st.experimental_rerun()
         else:
             st.sidebar.error('Usuário ou senha incorretos.')
 
