@@ -129,9 +129,11 @@ def _display_header():
     logo = Path('assets/combinado.png')
     
     if logo.exists():
-        col1, col2 = st.columns([2, 10])
-        col1.image(str(logo), width=280, use_column_width=False)
+        col1, col2 = st.columns([1.2, 10], gap='medium')
+        with col1:
+            st.image(str(logo), use_column_width=True)
         with col2:
+            st.write('')  # Espaço para alinhar verticalmente
             st.title('🏥 Consolidador de Arquivos .QRP (Glosas)')
             st.markdown('O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.')
         return
