@@ -3,7 +3,6 @@ import pandas as pd
 import re
 import io
 import unicodedata
-import base64
 from pathlib import Path
 
 def clean_qrp_text(raw_bytes):
@@ -126,23 +125,13 @@ def normalize_motivo(text):
     return text
 
 
-def _display_header():
+def _display_sidebar_logo():
     logo = Path('assets/combinado.png')
-
     if logo.exists():
-        encoded = base64.b64encode(logo.read_bytes()).decode('utf-8')
-        logo_html = f"""
-            <div style="display:flex; align-items:center; gap:24px; margin-bottom: 24px;">
-                <img src="data:image/png;base64,{encoded}" style="height:120px; border-radius:16px; object-fit:contain;" />
-                <div style="line-height:1.2;">
-                    <h1 style="margin:0; font-size:2.4rem;">🏥 Consolidador de Arquivos .QRP (Glosas)</h1>
-                    <p style="margin:0; font-size:1rem; color:#4b5263; max-width:760px;">O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.</p>
-                </div>
-            </div>
-        """
-        st.markdown(logo_html, unsafe_allow_html=True)
-        return
+        st.sidebar.image(str(logo), width=220)
 
+
+def _display_header():
     st.title('🏥 Consolidador de Arquivos .QRP (Glosas)')
     st.markdown('O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.')
 
@@ -299,6 +288,8 @@ def parse_qrp_bytes_to_records(raw_bytes, filename):
 
 def run_streamlit_app():
     st.set_page_config(page_title="Consolidador de Glosas", page_icon="🏥", layout="wide")
+
+    _display_sidebar_logo()
 
     if not login():
         return
