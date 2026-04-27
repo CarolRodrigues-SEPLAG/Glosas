@@ -3,7 +3,6 @@ import pandas as pd
 import re
 import io
 import unicodedata
-import base64
 from pathlib import Path
 
 def clean_qrp_text(raw_bytes):
@@ -126,25 +125,16 @@ def normalize_motivo(text):
     return text
 
 
-def _load_local_image_markdown(path: Path, width: int = 80):
-    try:
-        encoded = base64.b64encode(path.read_bytes()).decode('utf-8')
-        return f'<img src="data:image/png;base64,{encoded}" style="border-radius:16px; width:{width}px; object-fit:contain;" />'
-    except Exception:
-        return ''
-
-
 def _display_header():
     logo1 = Path('assets/logo1.png')
     logo2 = Path('assets/logo2.png')
-    logo_exists = logo1.exists() or logo2.exists()
 
-    if logo_exists:
-        cols = st.columns([1, 1, 8])
+    if logo1.exists() or logo2.exists():
+        cols = st.columns([1, 1, 10])
         if logo1.exists():
-            cols[0].markdown(_load_local_image_markdown(logo1), unsafe_allow_html=True)
+            cols[0].image(str(logo1), width=90)
         if logo2.exists():
-            cols[1].markdown(_load_local_image_markdown(logo2), unsafe_allow_html=True)
+            cols[1].image(str(logo2), width=90)
         with cols[2]:
             st.title('🏥 Consolidador de Arquivos .QRP (Glosas)')
             st.markdown('O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.')
@@ -322,16 +312,6 @@ def run_streamlit_app():
 
     _display_header()
     st.markdown('###')
-
-    cols = st.columns([8, 1])
-    with cols[1]:
-        if st.button('Sair', key='logout_top'):
-            st.session_state.authenticated = False
-            st.session_state.user = None
-            if hasattr(st, 'rerun'):
-                st.rerun()
-            else:
-                st.experimental_rerun()
 
     uploaded_files = st.file_uploader("Arraste os arquivos .qrp aqui", type=['qrp'], accept_multiple_files=True)
 
