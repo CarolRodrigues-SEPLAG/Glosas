@@ -335,8 +335,6 @@ def run_streamlit_app():
 
     uploaded_files = st.file_uploader("Arraste os arquivos .qrp aqui", type=['qrp'], accept_multiple_files=True)
 
-    uploaded_files = st.file_uploader("Arraste os arquivos .qrp aqui", type=['qrp'], accept_multiple_files=True)
-
     if uploaded_files:
         if st.button("Processar Arquivos", type="primary"):
             all_records = []
