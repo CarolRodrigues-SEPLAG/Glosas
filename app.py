@@ -126,16 +126,12 @@ def normalize_motivo(text):
 
 
 def _display_header():
-    logo1 = Path('assets/logo1.png')
-    logo2 = Path('assets/logo2.png')
-
-    if logo1.exists() or logo2.exists():
-        cols = st.columns([1, 1, 10])
-        if logo1.exists():
-            cols[0].image(str(logo1), width=90)
-        if logo2.exists():
-            cols[1].image(str(logo2), width=90)
-        with cols[2]:
+    logo = Path('assets/combinado.png')
+    
+    if logo.exists():
+        col1, col2 = st.columns([2, 10])
+        col1.image(str(logo), width=280, use_column_width=False)
+        with col2:
             st.title('🏥 Consolidador de Arquivos .QRP (Glosas)')
             st.markdown('O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.')
         return
