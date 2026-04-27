@@ -1,0 +1,14 @@
+# Python virtual environment
+.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Streamlit secrets should not be committed
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db

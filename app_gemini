@@ -1,0 +1,186 @@
+import streamlit as st
+import pandas as pd
+import re
+import io
+
+def clean_motivo_text(text):
+    text = re.sub(r'\([^)]*\)', ' ', text)
+    text = re.sub(r'\b\d{2}/\d{2}/\d{4}\b', ' ', text)
+    text = re.sub(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', ' ', text)
+    text = re.sub(r'\b\d+\b', ' ', text)
+    lixos = ['SISTEMA', 'DATASUS', 'SECRETARIA', 'ESTADUAL', 'HOSPITALARES',
+             'DEFINITIVO', 'MENSAGEM DE ERRO', 'VALOR PRÉVIA', 'MUNICÍPIO',
+             'RECIFE', 'LINHA', 'LOTE', 'COMPETÊNCIA', 'PÁGINA', 'GESTOR',
+             'VALOR', 'PRÉVIA', 'PRINCIPAL', 'ALTA', 'SIHD', 'CNES', 'VERSÃO']
+    for lx in lixos:
+        text = re.compile(r'\b' + lx + r'\b', re.IGNORECASE).sub(' ', text)
+    text = re.sub(r'[^A-Za-zÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙçãõáéíóúâêîôûàèìòù\s\-\/\.]+', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r'\s+[A-Za-zÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙçãõáéíóúâêîôûàèìòù]$', '', text)
+    return text
+
+def normalize_motivo(text):
+    t = text.upper()
+    if 'PROFISSIONAL AUTÔNOMO' in t or 'PROFISSIONAL AUTONOMO' in t:
+        return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL COM CBO INFORMADO'
+    if 'COM MAIS DE' in t and 'VINC' in t and 'PÚBLICOS' in t:
+        return 'PROFISSIONAL COM MAIS DE 2 VINC. PÚBLICOS (DESACORDO COM CF-88) OU'
+    if 'PROFISSIONAL VINCULADO' in t and ('NÃO CADASTRADO' in t or 'NAO CADASTRADO' in t):
+        return 'PROFISSIONAL VINCULADO NÃO CADASTRADO'
+    if 'PROFISSIONAL NÃO VINCULADO AO CNES COM O CBO INFORMADO' in t or 'PROFISSIONAL NAO VINCULADO AO CNES COM O CBO INFORMADO' in t:
+        if 'DOC' in t:
+            return 'PROFISSIONAL NÃO VINCULADO AO CNES COM O CBO INFORMADO (DOC)'
+        return 'PROFISSIONAL NÃO VINCULADO AO CNES COM O CBO INFORMADO'
+    return text
+
+def extract_utf16le_segments(raw_bytes, min_chars=4):
+    allowed = set(range(32, 127)) | set(range(160, 256)) | {9, 10, 13}
+    segments = []
+    i = 0
+    while i + 1 < len(raw_bytes):
+        code = raw_bytes[i] | (raw_bytes[i + 1] << 8)
+        if code in allowed:
+            start = i
+            chars = []
+            while i + 1 < len(raw_bytes) and ((raw_bytes[i] | (raw_bytes[i + 1] << 8)) in allowed):
+                chars.append(chr(raw_bytes[i] | (raw_bytes[i + 1] << 8)))
+                i += 2
+            if len(chars) >= min_chars:
+                segments.append((start, ''.join(chars).strip()))
+        else:
+            i += 2
+    return segments
+
+def parse_qrp_bytes_to_records(raw_bytes, filename):
+    records = []
+    segments = extract_utf16le_segments(raw_bytes, min_chars=4)
+    if not segments:
+        return records
+
+    # 1. Extrair Hospital (melhorado para pegar variações além de "HOSPITAL")
+    hospital_name = "HOSPITAL DESCONHECIDO"
+    for _, seg in segments:
+        if any(h in seg.upper() for h in ['HOSPITAL', 'FUNDACAO', 'CASA DE SAUDE', 'MATERNIDADE', 'ASSOCIA']):
+            match = re.search(r'\b\d{7}\s*-\s*(.*)', seg, re.IGNORECASE)
+            if match:
+                hospital_name = match.group(1).split('Lote')[0].strip()
+                break
+            match = re.search(r'CNES\s*[:\-]?\s*\d+\s*-\s*([^\n\r]+)', seg, re.IGNORECASE)
+            if match:
+                hospital_name = match.group(1).split('Lote')[0].strip()
+                break
+
+    ai_regex = re.compile(r'\b\d{13,14}\b')
+    currency_regex = re.compile(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b')
+
+    # 2. Agrupar em blocos por AIH (Ignora a ordem arbitrária do binário QRP)
+    aih_indices = [i for i, (pos, seg) in enumerate(segments) if ai_regex.search(seg)]
+
+    for k in range(len(aih_indices)):
+        start_idx = aih_indices[k]
+        # O bloco vai até a próxima AIH encontrada
+        end_idx = aih_indices[k+1] if k + 1 < len(aih_indices) else len(segments)
+        
+        aih_seg = segments[start_idx][1]
+        aih = ai_regex.search(aih_seg).group(0)
+        
+        # Junta todas as strings do segmento numa massa unificada
+        block_texts = [seg for pos, seg in segments[start_idx:end_idx]]
+        block_full_text = "  ".join(block_texts)
+        
+        # Extração de Valor Monetário (Pegamos todos e ficamos com o ÚLTIMO, que é o de Prévia)
+        valores = currency_regex.findall(block_full_text)
+        if valores:
+            try:
+                valor = float(valores[-1].replace('.', '').replace(',', '.'))
+            except ValueError:
+                valor = 0.0
+        else:
+            continue # Se não achou valor nenhum, o registro é corrompido/falso
+            
+        # Limpa o texto usando a sua função customizada
+        motivo_text = clean_motivo_text(block_full_text)
+        motivo_text = normalize_motivo(motivo_text)
+        
+        # Busca a maior frase (o motivo da glosa) ou o texto cru limpo
+        frases = re.findall(r'[A-ZÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙ][A-ZÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙ\s\-\.]{10,}', motivo_text)
+        if frases:
+            motivo_final = max(frases, key=len).strip()
+        else:
+            motivo_final = motivo_text if len(motivo_text) > 5 else "MOTIVO NÃO IDENTIFICADO"
+
+        if len(motivo_final) < 5 or valor == 0.0:
+            continue
+
+        records.append({
+            'Arquivo': filename,
+            'Hospital': hospital_name,
+            'AIH': aih,
+            'Motivo_Glosa': motivo_final,
+            'Valor_Glosa': valor
+        })
+
+    return records
+
+# --- INTERFACE STREAMLIT ---
+st.set_page_config(page_title="Consolidador de Glosas", page_icon="🏥", layout="wide")
+
+st.title("🏥 Consolidador de Arquivos .QRP (Glosas)")
+st.markdown("Extração binária das glosas via UTF-16LE, exclusão de AIHs duplicadas e consolidação estruturada.")
+
+uploaded_files = st.file_uploader("Arraste os arquivos .qrp aqui", type=['qrp'], accept_multiple_files=True)
+
+if uploaded_files:
+    if st.button("Processar Arquivos", type="primary"):
+        all_records = []
+        
+        with st.spinner('Extraindo dados de forma profunda no relatório...'):
+            for file in uploaded_files:
+                bytes_data = file.read()
+                records = parse_qrp_bytes_to_records(bytes_data, file.name)
+                all_records.extend(records)
+        
+        if not all_records:
+            st.error("Nenhum dado válido encontrado. Certifique-se de que os arquivos contêm AIHs.")
+        else:
+            df = pd.DataFrame(all_records)
+            
+            # SANEAMENTO 1: APLICANDO A REGRA DE AIH + VALOR
+            # O subset garante que ele remove se (e apenas se) o mesmo número de AIH tiver o mesmo valor de glosa
+            df_unique = df.drop_duplicates(subset=['AIH', 'Valor_Glosa'], keep='first')
+            
+            # SANEAMENTO 2: Agrupar por Hospital e Motivo
+            df_consolidado = df_unique.groupby(['Hospital', 'Motivo_Glosa'], as_index=False)['Valor_Glosa'].sum()
+            df_consolidado = df_consolidado.sort_values(by=['Hospital', 'Valor_Glosa'], ascending=[True, False])
+            
+            # Formatação PT-BR
+            df_consolidado['Valor Formatado'] = df_consolidado['Valor_Glosa'].apply(
+                lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            )
+            
+            st.success("Tabela gerada com sucesso! Sem códigos e com acentuação corrigida.")
+            
+            # Métricas
+            col1, col2 = st.columns(2)
+            with col1:
+                st.info(f"**Total de Ocorrências Válidas (Sem duplicatas):** {len(df_unique)}")
+            with col2:
+                total = df_consolidado['Valor_Glosa'].sum()
+                st.warning(f"**Soma Total Consolidada:** R$ {total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+            
+            st.dataframe(df_consolidado[['Hospital', 'Motivo_Glosa', 'Valor Formatado']], use_container_width=True)
+            
+            # Excel
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_consolidado[['Hospital', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(writer, index=False, sheet_name='Consolidado')
+                df_unique.to_excel(writer, index=False, sheet_name='Detalhamento das AIHs')
+                
+            processed_data = output.getvalue()
+            
+            st.download_button(
+                label="📥 Baixar Planilha Consolidada (.xlsx)",
+                data=processed_data,
+                file_name="Relatorio_Glosas_Consolidado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
