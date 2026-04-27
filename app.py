@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import io
 import unicodedata
+import base64
 from pathlib import Path
 
 def clean_qrp_text(raw_bytes):
@@ -127,15 +128,19 @@ def normalize_motivo(text):
 
 def _display_header():
     logo = Path('assets/combinado.png')
-    
+
     if logo.exists():
-        col1, col2 = st.columns([1.2, 10], gap='medium')
-        with col1:
-            st.image(str(logo), use_column_width=True)
-        with col2:
-            st.write('')  # Espaço para alinhar verticalmente
-            st.title('🏥 Consolidador de Arquivos .QRP (Glosas)')
-            st.markdown('O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.')
+        encoded = base64.b64encode(logo.read_bytes()).decode('utf-8')
+        logo_html = f"""
+            <div style="display:flex; align-items:center; gap:24px; margin-bottom: 24px;">
+                <img src="data:image/png;base64,{encoded}" style="height:120px; border-radius:16px; object-fit:contain;" />
+                <div style="line-height:1.2;">
+                    <h1 style="margin:0; font-size:2.4rem;">🏥 Consolidador de Arquivos .QRP (Glosas)</h1>
+                    <p style="margin:0; font-size:1rem; color:#4b5263; max-width:760px;">O sistema converte os arquivos `.qrp` para texto mantendo a acentuação, limpa os códigos dos motivos, exclui duplicatas exatas e consolida os valores por Hospital.</p>
+                </div>
+            </div>
+        """
+        st.markdown(logo_html, unsafe_allow_html=True)
         return
 
     st.title('🏥 Consolidador de Arquivos .QRP (Glosas)')
