@@ -15,7 +15,7 @@ def test_normalize_reviewed_motivos():
     cases = {
         'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO (DOC )': 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO',
         'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL': 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL',
-        'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL COM CBO INFORMADO': 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL COM CBO INFORMADO',
+        'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL COM CBO INFORMADO': 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL',
         'NÚMERO DA AIH FORA DE FAIXA': 'NÚMERO DA AIH FORA DE FAIXA',
         'DÍGITO VERIFICADOR AIH ANTERIOR INVÁLIDO': 'DÍGITO VERIFICADOR AIH ANTERIOR INVÁLIDO',
         'AIH BLOQUEADA POR DUPL.REINTERNAÇÃO MESMO CID DIAS': 'AIH BLOQUEADA POR DUPL.REINTERNAÇÃO, MESMO CID< 3 DIAS',
@@ -44,3 +44,11 @@ def test_eduardo_campos_reviewed_profissional_value_is_separate():
     row = df[df['Valor_Glosa'].eq(41.38)]
     assert len(row) == 1
     assert row.iloc[0]['Motivo_Glosa'] == 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
+
+
+def test_eduardo_campos_reviewed_execucao_value_is_alta_a_pedido():
+    path = Path('glosas - 2026.04 (FEV)/Arquivos QRP/OSS Eduardo Campos.QRP')
+    df = parse_unique(path)
+    rows = df[df['Motivo_Glosa'].eq('AIH BLOQUEADA POR ALTA A PEDIDO/ÓBITO/TRANSFERÊNCIA/EVASÃO C/ 1 DIA')]
+    assert round(rows['Valor_Glosa'].sum(), 2) == 1370.83
+    assert 'DE EXECUÇÃO INVÁLIDA ( )' not in set(df['Motivo_Glosa'])

@@ -64,7 +64,7 @@ def normalize_motivo(text):
     # Regras existentes
     if 'PROFISSIONAL AUTONOMO' in t_ascii or 'PROFISSIONAL AUTO NOMO' in t_ascii or 'PROFISISONAL AUTONOMO' in t_ascii:
         if 'NO HOSPITAL COM CBO INFORMADO' in t_ascii:
-            return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL COM CBO INFORMADO'
+            return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
         if 'NO HOSPITAL' in t_ascii:
             return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
         return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO'
@@ -157,9 +157,16 @@ def apply_review_overrides(motivo, filename, valor):
     if (
         'EDUARDO CAMPOS' in filename_ascii
         and abs(valor - 41.38) < 0.001
-        and motivo == 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL COM CBO INFORMADO'
+        and motivo == 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
     ):
         return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
+
+    if (
+        'EDUARDO CAMPOS' in filename_ascii
+        and abs(valor - 1171.50) < 0.001
+        and motivo == 'DE EXECUÇÃO INVÁLIDA ( )'
+    ):
+        return 'AIH BLOQUEADA POR ALTA A PEDIDO/ÓBITO/TRANSFERÊNCIA/EVASÃO C/ 1 DIA'
 
     return motivo
 
