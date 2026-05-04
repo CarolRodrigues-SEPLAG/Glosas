@@ -85,6 +85,12 @@ def officialize_motivo(motivo):
     return motivo, False
 
 
+def highlight_new_motivos(row):
+    if row.get('Status') == 'Novo':
+        return ['background-color: #fff3cd; color: #5f4100'] * len(row)
+    return [''] * len(row)
+
+
 def normalize_motivo(text):
     t = text.upper()
 
@@ -454,9 +460,13 @@ def run_streamlit_app():
                 df_motivos_revisao = df_unique[df_unique['Motivo_Reconhecido'] == False]
                 
                 # CONSOLIDAÇÃO: Agrupar por Hospital e Motivo
-                df_consolidado = df_unique.groupby(['Hospital', 'Motivo_Glosa'], as_index=False)['Valor_Glosa'].sum()
+                df_consolidado = df_unique.groupby(['Hospital', 'Motivo_Glosa'], as_index=False).agg(
+                    Valor_Glosa=('Valor_Glosa', 'sum'),
+                    Motivo_Reconhecido=('Motivo_Reconhecido', 'all')
+                )
                 df_consolidado = df_consolidado[df_consolidado['Valor_Glosa'] > 0]
                 df_consolidado = df_consolidado.sort_values(by=['Hospital', 'Valor_Glosa'], ascending=[True, False])
+                df_consolidado['Status'] = df_consolidado['Motivo_Reconhecido'].map({True: 'Oficial', False: 'Novo'})
                 
                 # Formatação Financeira PT-BR
                 df_consolidado['Valor Formatado'] = df_consolidado['Valor_Glosa'].apply(
@@ -465,7 +475,7 @@ def run_streamlit_app():
                 
                 st.success("Tabela gerada com sucesso! Sem códigos e com acentuação corrigida.")
                 if not df_motivos_revisao.empty:
-                    st.warning(f"{len(df_motivos_revisao)} ocorrência(s) com motivo fora da lista oficial. Confira a aba 'Motivos para Revisão' no Excel.")
+                    st.warning(f"{len(df_motivos_revisao)} ocorrência(s) com motivo novo, fora da lista oficial. Elas aparecem destacadas na tabela e também na aba 'Motivos para Revisão' do Excel.")
                 
                 # Métricas em destaque na tela
                 col1, col2 = st.columns(2)
@@ -476,12 +486,16 @@ def run_streamlit_app():
                     total = df_consolidado['Valor_Glosa'].sum()
                     st.warning(f"**Soma Total Consolidada:** R$ {total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
                 
-                st.dataframe(df_consolidado[['Hospital', 'Motivo_Glosa', 'Valor Formatado']], use_container_width=True)
+                df_visualizacao = df_consolidado[['Hospital', 'Motivo_Glosa', 'Status', 'Valor Formatado']]
+                st.dataframe(
+                    df_visualizacao.style.apply(highlight_new_motivos, axis=1),
+                    use_container_width=True
+                )
                 
                 # Geração do arquivo Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_consolidado[['Hospital', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(writer, index=False, sheet_name='Consolidado')
+                    df_consolidado[['Hospital', 'Motivo_Glosa', 'Status', 'Valor_Glosa']].to_excel(writer, index=False, sheet_name='Consolidado')
                     df_unique[['Arquivo', 'Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(
                         writer, index=False, sheet_name='Detalhamento das AIHs')
                     if not df_motivos_revisao.empty:
