@@ -4,6 +4,7 @@ import re
 import io
 import unicodedata
 from pathlib import Path
+from functools import lru_cache
 
 def clean_qrp_text(raw_bytes):
     """
@@ -25,7 +26,7 @@ def clean_motivo_text(text):
     lixos = ['SISTEMA', 'DATASUS', 'SECRETARIA', 'ESTADUAL', 'HOSPITALARES',
              'DEFINITIVO', 'MENSAGEM DE ERRO', 'VALOR PRÉVIA', 'MUNICÍPIO',
              'RECIFE', 'LINHA', 'LOTE', 'COMPETÊNCIA', 'PÁGINA', 'GESTOR',
-             'VALOR', 'PRÉVIA', 'PRINCIPAL', 'ALTA', 'SIHD', 'ARIAL', 'FONTE']
+             'VALOR', 'PRÉVIA', 'ALTA', 'SIHD', 'ARIAL', 'FONTE']
     for lx in lixos:
         text = re.compile(r'\b' + lx + r'\b', re.IGNORECASE).sub(' ', text)
     text = re.sub(r'\([^)]*\)', lambda m: m.group(0) if 'DOC:' in m.group(0).upper() else m.group(0), text)
@@ -40,12 +41,55 @@ def clean_motivo_text(text):
     return text
 
 
+def remove_accents(value):
+    normalized = unicodedata.normalize('NFD', value)
+    return ''.join(ch for ch in normalized if unicodedata.category(ch) != 'Mn')
+
+
+def motivo_key(text):
+    text = remove_accents(str(text).upper())
+    text = re.sub(r'[^A-Z0-9]+', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+@lru_cache(maxsize=1)
+def load_official_motivos():
+    path = Path('motivos_oficiais.xlsx')
+    if not path.exists():
+        return {}
+
+    df = pd.read_excel(path, header=None)
+    motivos = []
+    for value in df.to_numpy().ravel():
+        if pd.isna(value):
+            continue
+        motivo = str(value).strip()
+        if not motivo:
+            continue
+        if motivo_key(motivo) == 'MOTIVOS DA REJEICAO':
+            continue
+        motivos.append(motivo.upper())
+
+    return {motivo_key(motivo): motivo for motivo in motivos}
+
+
+def officialize_motivo(motivo):
+    official_by_key = load_official_motivos()
+    if not official_by_key:
+        return motivo, True
+
+    official = official_by_key.get(motivo_key(motivo))
+    if official:
+        return official, True
+
+    return motivo, False
+
+
 def normalize_motivo(text):
     t = text.upper()
 
     def accentless(value):
-        normalized = unicodedata.normalize('NFD', value)
-        return ''.join(ch for ch in normalized if unicodedata.category(ch) != 'Mn')
+        return remove_accents(value)
 
     t_ascii = re.sub(r'[^A-Z0-9 ]+', ' ', accentless(t))
     t_ascii = re.sub(r'\s+', ' ', t_ascii).strip()
@@ -56,7 +100,7 @@ def normalize_motivo(text):
 
     # Regras baseadas em códigos entre parênteses
     if 'DESACORDO COM CF-88' in paren_text or 'PROF COM MAIS 2 VINC PUBL' in paren_text:
-        return 'PROFISSIONAL COM MAIS DE 2 VINC. PÚBLICOS (DESACORDO COM CF-88) OU PROFISSIONAL COM CH MAIOR QUE 168h POR SEMANA'
+        return 'PROFISSIONAL COM MAIS DE 2 VINC. PÚBLICOS (DESACORDO COM CF-88) OU PROFISSIONAL COM CH MAIOR QUE 168H POR SEMANA (PROF COM MAIS 168 H  SEMANAIS)'
 
     if 'DOC:' in paren_text or 'DOCUMENTO' in paren_text:
         return 'PROFISSIONAL VINCULADO NÃO CADASTRADO'
@@ -90,8 +134,11 @@ def normalize_motivo(text):
     if 'AIH REJEITADA NA IMPORTACAO' in t_ascii:
         return 'AIH REJEITADA NA IMPORTAÇÃO'
 
+    if 'AIH REAPRESENTADA C DATA DE INT OU SAIDA DIFERENTE DA PRIMEIRA' in t_ascii:
+        return 'AIH REAPRESENTADA C/ DATA DE INT OU SAIDA DIFERENTE DA PRIMEIRA'
+
     if 'DESACORDO COM CF' in t_ascii or 'CF-' in t_ascii or 'PROF COM MAIS' in t_ascii and 'VINC' in t_ascii and 'PUBL' in t_ascii:
-        return 'PROFISSIONAL COM MAIS DE 2 VINC. PÚBLICOS (DESACORDO COM CF-88) OU PROFISSIONAL COM CH MAIOR QUE 168h POR SEMANA'
+        return 'PROFISSIONAL COM MAIS DE 2 VINC. PÚBLICOS (DESACORDO COM CF-88) OU PROFISSIONAL COM CH MAIOR QUE 168H POR SEMANA (PROF COM MAIS 168 H  SEMANAIS)'
 
     if 'DUPL INTERNA O C INTERSERC O DE PERIODOS' in t_ascii or 'DUPL INTERNACAO C INTERSERCAO DE PERIODOS' in t_ascii:
         return 'AIH BLOQUEADA POR DUPL.INTERNAÇÃO C/INTERSERCÃO DE PERÍODOS'
@@ -140,6 +187,30 @@ def normalize_motivo(text):
 
     if 'QUANTIDADE INVALIDA' in t_ascii:
         return 'QUANTIDADE INVÁLIDA'
+
+    if 'AIH BLOQUEADA POR DUPLICIDADER' in t_ascii:
+        return 'AIH BLOQUEADA POR DUPLICIDADE'
+
+    if 'AIH CANCELADA POR DUPL PROCED JA INCLUIDOS EM OUTRA AIH NESTE PROCESSAMENTO' in t_ascii:
+        return 'AIH CANCELADA POR DUPL PROCE. JA INCLUIDAS EM OUTRO AIH NESTE PROCESSAMENTO'
+
+    if 'DATA DA INTERNACAO DA AIH DIFERENTE DA AIH' in t_ascii:
+        return 'DATA DA INTERNACAO DA AIH 5 DIFERENTE DA 1'
+
+    if 'DIAGNOSTICO DA AIH DIFERENTE DA AIH' in t_ascii or 'DIAGNOSTICO PRINCIPAL DA AIH DIFERENTE DA AIH' in t_ascii:
+        return 'DIAGNOSTICO PRINCIPAL DA AIH 5 DIFERENTE DA AIH1'
+
+    if 'IMPLANTE DE CATETER COM CMPT EXECUCAO POSTERIOR A CMPT DE EXECUCAO DA HEMODIALISE' in t_ascii:
+        return 'IMPLANTE DE CATETER COM CMPT EXECUCAO POSTERIOR A CMPT DE EXECUCAO DE HEMODIALISE'
+
+    if 'QUANTIDADE DE APLICACOES SUPERIOR AO PERIODO DE INTERNACAO' in t_ascii:
+        return 'QUANTIDADE DE APLICACOES SUPERIOR AO PERIODO DE INTERNACAO (PERIODO INTERN: 1 DIA(S))'
+
+    if 'TERCEIRO NAO POSSUI SERVICO CLASSIFICACAO EXIGIDO' in t_ascii:
+        return 'TERCEIRO NAO POSSUI O SERVICO/CLASSIFICACAO EXIGIDOS'
+
+    if 'PROCEDIMENTO REALIZADO INCOMPATIVEL COM CIRURGIA RELACIONADA' in t_ascii:
+        return 'PROCEDIMENTO REALIZADO INCOMPATIVEL COM CIRURGIA REALIZADA'
 
     if 'LANCAMENTO OBRIGATORIO DE OPM' in t_ascii:
         return 'LANÇAMENTO OBRIGATÓRIO DE OPM'
@@ -327,13 +398,15 @@ def parse_qrp_bytes_to_records(raw_bytes, filename):
         motivo_text = clean_motivo_text(motivo_text)
         motivo_text = normalize_motivo(motivo_text)
         motivo_text = apply_review_overrides(motivo_text, filename, valor)
+        motivo_text, motivo_reconhecido = officialize_motivo(motivo_text)
 
         records.append({
             'Arquivo': filename,
             'Hospital': hospital_name,
             'AIH': aih,
             'Motivo_Glosa': motivo_text,
-            'Valor_Glosa': valor
+            'Valor_Glosa': valor,
+            'Motivo_Reconhecido': motivo_reconhecido
         })
 
     return records
@@ -378,6 +451,7 @@ def run_streamlit_app():
                 
                 # Remover duplicatas por AIH + Valor (mesma glosa repetida)
                 df_unique = df.drop_duplicates(subset=['Hospital', 'AIH', 'Valor_Glosa'], keep='first')
+                df_motivos_revisao = df_unique[df_unique['Motivo_Reconhecido'] == False]
                 
                 # CONSOLIDAÇÃO: Agrupar por Hospital e Motivo
                 df_consolidado = df_unique.groupby(['Hospital', 'Motivo_Glosa'], as_index=False)['Valor_Glosa'].sum()
@@ -390,6 +464,8 @@ def run_streamlit_app():
                 )
                 
                 st.success("Tabela gerada com sucesso! Sem códigos e com acentuação corrigida.")
+                if not df_motivos_revisao.empty:
+                    st.warning(f"{len(df_motivos_revisao)} ocorrência(s) com motivo fora da lista oficial. Confira a aba 'Motivos para Revisão' no Excel.")
                 
                 # Métricas em destaque na tela
                 col1, col2 = st.columns(2)
@@ -408,6 +484,9 @@ def run_streamlit_app():
                     df_consolidado[['Hospital', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(writer, index=False, sheet_name='Consolidado')
                     df_unique[['Arquivo', 'Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(
                         writer, index=False, sheet_name='Detalhamento das AIHs')
+                    if not df_motivos_revisao.empty:
+                        df_motivos_revisao[['Arquivo', 'Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(
+                            writer, index=False, sheet_name='Motivos para Revisão')
                 
                 processed_data = output.getvalue()
                 
