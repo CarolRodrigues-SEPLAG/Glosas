@@ -61,6 +61,22 @@ def test_eduardo_campos_reviewed_execucao_value_is_alta_a_pedido():
     assert 'DE EXECUÇÃO INVÁLIDA ( )' not in set(df['Motivo_Glosa'])
 
 
+def test_eduardo_campos_exemplo_competencia_execucao_consolidacao():
+    path = Path('Exemplo QRP/OSS Eduardo Campos.QRP')
+    if path.exists():
+        records = parse_qrp_bytes_to_records(path.read_bytes(), path.name)
+        df = pd.DataFrame(records).drop_duplicates(subset=['Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa'], keep='first')
+        
+        # Verificar que COMPETENCIA DE EXECUCAO INVALIDA com 1171.50 foi mapeado para ALTA A PEDIDO
+        competencia_rows = df[df['Motivo_Glosa'].eq('COMPETENCIA DE EXECUCAO INVALIDA')]
+        assert len(competencia_rows) == 0, "COMPETÊNCIA DE EXECUÇÃO INVÁLIDA deve ter sido consolidada"
+        
+        # Verificar que o valor 1171.50 aparece sob ALTA A PEDIDO
+        alta_rows = df[df['Valor_Glosa'].eq(1171.50)]
+        assert len(alta_rows) > 0
+        assert any('ALTA A PEDIDO' in m for m in alta_rows['Motivo_Glosa'])
+
+
 def test_preserva_motivos_distintos_para_mesmo_aih_valor():
     arquivo_paths = [
         'glosas - 2026.04 (FEV)/Arquivos QRP/6 Restauracao.QRP',
