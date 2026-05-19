@@ -103,7 +103,7 @@ def test_restauracao_mantem_informacoes_e_periodos_sobrepostos_separados():
     assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 457.98
 
 
-def test_geral_de_areias_aplica_deduplicacao_geral_para_dupl_internacao_e_periodos():
+def test_geral_de_areias_mantem_periodo_sobreposto_validado_separado():
     path = Path('glosas - 2026.04 (FEV)/Arquivos QRP/DGAR Geral de Areias.QRP')
     df = pd.DataFrame(parse_qrp_bytes_to_records(path.read_bytes(), path.name))
     df_unique = drop_duplicate_glosa_records(df)
@@ -113,5 +113,5 @@ def test_geral_de_areias_aplica_deduplicacao_geral_para_dupl_internacao_e_period
 
     assert len(df_unique) == 11
     assert round(df_unique['Valor_Glosa'].sum(), 2) == 5738.16
-    assert round(dupl['Valor_Glosa'].sum(), 2) == 1678.52
-    assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 0.00
+    assert round(dupl['Valor_Glosa'].sum(), 2) == 1238.83
+    assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 439.69
