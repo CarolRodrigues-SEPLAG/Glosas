@@ -250,13 +250,6 @@ def apply_review_overrides(motivo, filename, valor):
     ):
         return 'AIH BLOQUEADA POR ALTA A PEDIDO/ÓBITO/TRANSFERÊNCIA/EVASÃO C/ 1 DIA'
 
-    if (
-        'EDUARDO CAMPOS' in filename_ascii
-        and abs(valor - 1171.50) < 0.001
-        and motivo == 'COMPETENCIA DE EXECUCAO INVALIDA'
-    ):
-        return 'AIH BLOQUEADA POR ALTA A PEDIDO/OBITO/TRANSFERENCIA/EVASAO C/ 1 DIA'
-
     return motivo
 
 
