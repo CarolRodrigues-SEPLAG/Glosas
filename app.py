@@ -52,12 +52,28 @@ def motivo_key(text):
     return re.sub(r'\s+', ' ', text).strip()
 
 
-@lru_cache(maxsize=1)
+# Variável global para rastrear a modificação do arquivo de motivos
+_motivos_file_mtime = None
+_motivos_cache = None
+
 def load_official_motivos():
+    global _motivos_file_mtime, _motivos_cache
+    
     path = Path('motivos_oficiais.xlsx')
     if not path.exists():
         return {}
 
+    # Verificar se o arquivo foi modificado
+    try:
+        current_mtime = path.stat().st_mtime
+    except OSError:
+        return _motivos_cache or {}
+    
+    # Se o arquivo não foi modificado, retornar o cache
+    if _motivos_file_mtime == current_mtime and _motivos_cache is not None:
+        return _motivos_cache
+
+    # Arquivo foi modificado ou é a primeira vez que carrega
     df = pd.read_excel(path, header=None)
     motivos = []
     for value in df.to_numpy().ravel():
@@ -70,7 +86,13 @@ def load_official_motivos():
             continue
         motivos.append(motivo.upper())
 
-    return {motivo_key(motivo): motivo for motivo in motivos}
+    result = {motivo_key(motivo): motivo for motivo in motivos}
+    
+    # Atualizar o cache global
+    _motivos_file_mtime = current_mtime
+    _motivos_cache = result
+    
+    return result
 
 
 def officialize_motivo(motivo):
