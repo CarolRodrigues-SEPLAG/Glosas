@@ -528,7 +528,7 @@ def run_streamlit_app():
                 col1, col2 = st.columns(2)
                 with col1:
                     st.info(f"**Total de Ocorrências Válidas:** {len(df_unique)}")
-                    st.caption(f"Duplicatas exatas de glosa removidas, preservando motivos distintos para o mesmo AIH/valor.")
+                    st.caption("Duplicatas por Hospital+AIH+Valor removidas, mantendo o primeiro motivo. Pares validados pela equipe são separados quando aplicável.")
                 with col2:
                     total = df_consolidado['Valor_Glosa'].sum()
                     st.warning(f"**Soma Total Consolidada:** R$ {total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
