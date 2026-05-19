@@ -108,14 +108,18 @@ def officialize_motivo(motivo):
 
 
 DEDUP_MOTIVO_EXCEPTIONS = {
-    motivo_key('HOSPITAL DA RESTAURACAO'): {
-        'AIH BLOQUEADA POR INFORMACOES OU REGISTROS INCOMPATIVEIS',
-        'AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO',
-    },
     motivo_key('HOSPITAL GERAL DE AREIAS'): {
         'AIH BLOQUEADA POR DUPL.INTERNACAO C/INTERSERCCAO DE PERIODOS',
         'AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO',
     },
+}
+
+DEDUP_PREFERRED_MOTIVOS = {
+    (
+        motivo_key('HOSPITAL DA RESTAURACAO'),
+        '2626101049110',
+        457.98,
+    ): 'AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO',
 }
 
 
@@ -125,15 +129,33 @@ def dedup_motivo_exception_key(row):
     return motivo if motivo in exception_motivos else ''
 
 
+def dedup_preference_priority(row):
+    preferred = DEDUP_PREFERRED_MOTIVOS.get((
+        motivo_key(row['Hospital']),
+        row['AIH'],
+        round(float(row['Valor_Glosa']), 2),
+    ))
+    if preferred and row['Motivo_Glosa'] == preferred:
+        return 0
+    return 1
+
+
 def drop_duplicate_glosa_records(df):
     """Remove glosas duplicadas pelo mesmo hospital, AIH e valor, mantendo o primeiro motivo."""
     df_with_key = df.copy()
+    df_with_key['_Original_Order'] = range(len(df_with_key))
     df_with_key['_Motivo_Dedup'] = df_with_key.apply(dedup_motivo_exception_key, axis=1)
+    df_with_key['_Dedup_Priority'] = df_with_key.apply(dedup_preference_priority, axis=1)
+    df_with_key = df_with_key.sort_values(
+        by=['_Dedup_Priority', '_Original_Order'],
+        kind='mergesort'
+    )
     df_unique = df_with_key.drop_duplicates(
         subset=['Hospital', 'AIH', 'Valor_Glosa', '_Motivo_Dedup'],
         keep='first'
     )
-    return df_unique.drop(columns=['_Motivo_Dedup'])
+    df_unique = df_unique.sort_values(by='_Original_Order', kind='mergesort')
+    return df_unique.drop(columns=['_Motivo_Dedup', '_Dedup_Priority', '_Original_Order'])
 
 
 

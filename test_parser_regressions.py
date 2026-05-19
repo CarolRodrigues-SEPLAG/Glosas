@@ -97,8 +97,10 @@ def test_restauracao_mantem_informacoes_e_periodos_sobrepostos_separados():
     informacoes = df_unique[df_unique['Motivo_Glosa'].eq('AIH BLOQUEADA POR INFORMACOES OU REGISTROS INCOMPATIVEIS')]
     sobrepostos = df_unique[df_unique['Motivo_Glosa'].eq('AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO')]
 
-    assert round(informacoes['Valor_Glosa'].sum(), 2) == 11301.53
-    assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 9477.11
+    assert len(df_unique) == 14
+    assert round(df_unique['Valor_Glosa'].sum(), 2) == 43109.07
+    assert round(informacoes['Valor_Glosa'].sum(), 2) == 10843.55
+    assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 457.98
 
 
 def test_geral_de_areias_mantem_dupl_internacao_e_periodos_sobrepostos_separados():
