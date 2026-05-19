@@ -108,8 +108,8 @@ def officialize_motivo(motivo):
 
 
 def drop_duplicate_glosa_records(df):
-    """Remove apenas duplicatas exatas de glosa, preservando motivos distintos."""
-    return df.drop_duplicates(subset=['Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa'], keep='first')
+    """Remove glosas duplicadas pelo mesmo hospital, AIH e valor, mantendo o primeiro motivo."""
+    return df.drop_duplicates(subset=['Hospital', 'AIH', 'Valor_Glosa'], keep='first')
 
 
 def highlight_new_motivos(row):
@@ -482,7 +482,7 @@ def run_streamlit_app():
             else:
                 df = pd.DataFrame(all_records)
                 
-                # Remover duplicatas exatas de glosa, preservando motivos distintos para o mesmo AIH/valor
+                # Remover duplicatas por Hospital+AIH+Valor, mantendo o primeiro motivo encontrado.
                 df_unique = drop_duplicate_glosa_records(df)
                 df_motivos_revisao = df_unique[df_unique['Motivo_Reconhecido'] == False]
 

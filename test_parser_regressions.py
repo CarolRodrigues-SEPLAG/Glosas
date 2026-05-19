@@ -61,15 +61,28 @@ def test_eduardo_campos_reviewed_execucao_value_is_alta_a_pedido():
     assert 'DE EXECUÇÃO INVÁLIDA ( )' not in set(df['Motivo_Glosa'])
 
 
-def test_preserva_motivos_distintos_para_mesmo_aih_valor():
-    arquivo_paths = [
-        'glosas - 2026.04 (FEV)/Arquivos QRP/6 Restauracao.QRP',
-        'glosas - 2026.04 (FEV)/Arquivos QRP/OSS Eduardo Campos.QRP',
-        'glosas - 2026.04 (FEV)/Arquivos QRP/DGAR Geral de Areias.QRP',
-    ]
-    for arquivo in arquivo_paths:
-        df = pd.DataFrame(parse_qrp_bytes_to_records(Path(arquivo).read_bytes(), Path(arquivo).name))
-        df_correct = drop_duplicate_glosa_records(df)
-        df_wrong = df.drop_duplicates(subset=['Hospital', 'AIH', 'Valor_Glosa'], keep='first')
-        assert len(df_correct) >= len(df_wrong)
-        assert len(df_correct) != len(df_wrong)
+def test_remove_motivos_distintos_quando_aih_e_valor_sao_iguais():
+    df = pd.DataFrame([
+        {
+            'Arquivo': 'teste.QRP',
+            'Hospital': 'HOSPITAL TESTE',
+            'AIH': '2626106714836',
+            'Motivo_Glosa': 'COMPETENCIA DE EXECUCAO INVALIDA',
+            'Valor_Glosa': 1171.50,
+            'Motivo_Reconhecido': True,
+        },
+        {
+            'Arquivo': 'teste.QRP',
+            'Hospital': 'HOSPITAL TESTE',
+            'AIH': '2626106714836',
+            'Motivo_Glosa': 'QUANTIDADES DIFERENTES DO PROCEDIMENTO NA EQUIPE CIRURGICA',
+            'Valor_Glosa': 1171.50,
+            'Motivo_Reconhecido': True,
+        },
+    ])
+
+    df_unique = drop_duplicate_glosa_records(df)
+
+    assert len(df_unique) == 1
+    assert df_unique.iloc[0]['Motivo_Glosa'] == 'COMPETENCIA DE EXECUCAO INVALIDA'
+    assert df_unique['Valor_Glosa'].sum() == 1171.50
