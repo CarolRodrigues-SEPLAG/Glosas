@@ -167,6 +167,9 @@ def normalize_motivo(text):
     if 'AIH REJEITADA NA IMPORTACAO' in t_ascii:
         return 'AIH REJEITADA NA IMPORTAÇÃO'
 
+    if 'COMPETENCIA DE EXECUCAO INVALIDA' in t_ascii or 'DE EXECUCAO INVALIDA' in t_ascii:
+        return 'COMPETÊNCIA DE EXECUÇÃO INVÁLIDA'
+
     if 'AIH REAPRESENTADA C DATA DE INT OU SAIDA DIFERENTE DA PRIMEIRA' in t_ascii:
         return 'AIH REAPRESENTADA C/ DATA DE INT OU SAIDA DIFERENTE DA PRIMEIRA'
 
@@ -264,13 +267,6 @@ def apply_review_overrides(motivo, filename, valor):
         and motivo == 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
     ):
         return 'PROFISSIONAL AUTÔNOMO NÃO CADASTRADO NO HOSPITAL'
-
-    if (
-        'EDUARDO CAMPOS' in filename_ascii
-        and abs(valor - 1171.50) < 0.001
-        and motivo == 'DE EXECUÇÃO INVÁLIDA ( )'
-    ):
-        return 'AIH BLOQUEADA POR ALTA A PEDIDO/ÓBITO/TRANSFERÊNCIA/EVASÃO C/ 1 DIA'
 
     return motivo
 

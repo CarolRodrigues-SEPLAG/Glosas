@@ -53,12 +53,13 @@ def test_eduardo_campos_reviewed_profissional_value_is_separate():
     assert row.iloc[0]['Motivo_Glosa'] == 'PROFISSIONAL AUTONOMO NAO CADASTRADO NO HOSPITAL'
 
 
-def test_eduardo_campos_reviewed_execucao_value_is_alta_a_pedido():
+def test_eduardo_campos_execucao_invalida_e_alta_a_pedido_ficam_separados():
     path = Path('glosas - 2026.04 (FEV)/Arquivos QRP/OSS Eduardo Campos.QRP')
     df = parse_unique(path)
-    rows = df[df['Motivo_Glosa'].eq('AIH BLOQUEADA POR ALTA A PEDIDO/OBITO/TRANSFERENCIA/EVASAO C/ 1 DIA')]
-    assert round(rows['Valor_Glosa'].sum(), 2) == 1370.83
-    assert 'DE EXECUÇÃO INVÁLIDA ( )' not in set(df['Motivo_Glosa'])
+    alta = df[df['Motivo_Glosa'].eq('AIH BLOQUEADA POR ALTA A PEDIDO/OBITO/TRANSFERENCIA/EVASAO C/ 1 DIA')]
+    execucao = df[df['Motivo_Glosa'].eq('COMPETENCIA DE EXECUCAO INVALIDA')]
+    assert round(alta['Valor_Glosa'].sum(), 2) == 199.33
+    assert round(execucao['Valor_Glosa'].sum(), 2) == 1171.50
 
 
 def test_remove_motivos_distintos_quando_aih_e_valor_sao_iguais():
