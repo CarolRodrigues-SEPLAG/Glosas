@@ -107,9 +107,34 @@ def officialize_motivo(motivo):
     return motivo, False
 
 
+DEDUP_MOTIVO_EXCEPTIONS = {
+    motivo_key('HOSPITAL DA RESTAURACAO'): {
+        'AIH BLOQUEADA POR INFORMACOES OU REGISTROS INCOMPATIVEIS',
+        'AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO',
+    },
+    motivo_key('HOSPITAL GERAL DE AREIAS'): {
+        'AIH BLOQUEADA POR DUPL.INTERNACAO C/INTERSERCCAO DE PERIODOS',
+        'AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO',
+    },
+}
+
+
+def dedup_motivo_exception_key(row):
+    exception_motivos = DEDUP_MOTIVO_EXCEPTIONS.get(motivo_key(row['Hospital']), set())
+    motivo = row['Motivo_Glosa']
+    return motivo if motivo in exception_motivos else ''
+
+
 def drop_duplicate_glosa_records(df):
     """Remove glosas duplicadas pelo mesmo hospital, AIH e valor, mantendo o primeiro motivo."""
-    return df.drop_duplicates(subset=['Hospital', 'AIH', 'Valor_Glosa'], keep='first')
+    df_with_key = df.copy()
+    df_with_key['_Motivo_Dedup'] = df_with_key.apply(dedup_motivo_exception_key, axis=1)
+    df_unique = df_with_key.drop_duplicates(
+        subset=['Hospital', 'AIH', 'Valor_Glosa', '_Motivo_Dedup'],
+        keep='first'
+    )
+    return df_unique.drop(columns=['_Motivo_Dedup'])
+
 
 
 def highlight_new_motivos(row):

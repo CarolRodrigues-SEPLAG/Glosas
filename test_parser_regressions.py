@@ -87,3 +87,27 @@ def test_remove_motivos_distintos_quando_aih_e_valor_sao_iguais():
     assert len(df_unique) == 1
     assert df_unique.iloc[0]['Motivo_Glosa'] == 'COMPETENCIA DE EXECUCAO INVALIDA'
     assert df_unique['Valor_Glosa'].sum() == 1171.50
+
+
+def test_restauracao_mantem_informacoes_e_periodos_sobrepostos_separados():
+    path = Path('glosas - 2026.04 (FEV)/Arquivos QRP/6 Restauracao.QRP')
+    df = pd.DataFrame(parse_qrp_bytes_to_records(path.read_bytes(), path.name))
+    df_unique = drop_duplicate_glosa_records(df)
+
+    informacoes = df_unique[df_unique['Motivo_Glosa'].eq('AIH BLOQUEADA POR INFORMACOES OU REGISTROS INCOMPATIVEIS')]
+    sobrepostos = df_unique[df_unique['Motivo_Glosa'].eq('AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO')]
+
+    assert round(informacoes['Valor_Glosa'].sum(), 2) == 11301.53
+    assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 9477.11
+
+
+def test_geral_de_areias_mantem_dupl_internacao_e_periodos_sobrepostos_separados():
+    path = Path('glosas - 2026.04 (FEV)/Arquivos QRP/DGAR Geral de Areias.QRP')
+    df = pd.DataFrame(parse_qrp_bytes_to_records(path.read_bytes(), path.name))
+    df_unique = drop_duplicate_glosa_records(df)
+
+    dupl = df_unique[df_unique['Motivo_Glosa'].eq('AIH BLOQUEADA POR DUPL.INTERNACAO C/INTERSERCCAO DE PERIODOS')]
+    sobrepostos = df_unique[df_unique['Motivo_Glosa'].eq('AIH BLOQUEADA POR PERIODOS DE INTERNACAO SOBREPOSTOS NO MOVIMENTO')]
+
+    assert round(dupl['Valor_Glosa'].sum(), 2) == 1678.52
+    assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 1678.52
