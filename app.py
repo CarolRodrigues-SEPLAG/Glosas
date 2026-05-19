@@ -85,6 +85,11 @@ def officialize_motivo(motivo):
     return motivo, False
 
 
+def drop_duplicate_glosa_records(df):
+    """Remove apenas duplicatas exatas de glosa, preservando motivos distintos."""
+    return df.drop_duplicates(subset=['Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa'], keep='first')
+
+
 def highlight_new_motivos(row):
     if row.get('Status') == 'Novo':
         return ['background-color: #fff3cd; color: #5f4100'] * len(row)
@@ -455,11 +460,10 @@ def run_streamlit_app():
             else:
                 df = pd.DataFrame(all_records)
                 
-                # Remover duplicatas por AIH + Valor (mesma glosa repetida)
-                df_unique = df.drop_duplicates(subset=['Hospital', 'AIH', 'Valor_Glosa'], keep='first')
+                # Remover duplicatas exatas de glosa, preservando motivos distintos para o mesmo AIH/valor
+                df_unique = drop_duplicate_glosa_records(df)
                 df_motivos_revisao = df_unique[df_unique['Motivo_Reconhecido'] == False]
-                
-                # CONSOLIDAÇÃO: Agrupar por Hospital e Motivo
+
                 df_consolidado = df_unique.groupby(['Hospital', 'Motivo_Glosa'], as_index=False).agg(
                     Valor_Glosa=('Valor_Glosa', 'sum'),
                     Motivo_Reconhecido=('Motivo_Reconhecido', 'all')
@@ -467,12 +471,12 @@ def run_streamlit_app():
                 df_consolidado = df_consolidado[df_consolidado['Valor_Glosa'] > 0]
                 df_consolidado = df_consolidado.sort_values(by=['Hospital', 'Valor_Glosa'], ascending=[True, False])
                 df_consolidado['Status'] = df_consolidado['Motivo_Reconhecido'].map({True: 'Oficial', False: 'Novo'})
-                
-                # Formatação Financeira PT-BR
+
+                # Formatação financeira PT-BR
                 df_consolidado['Valor Formatado'] = df_consolidado['Valor_Glosa'].apply(
                     lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
                 )
-                
+
                 st.success("Tabela gerada com sucesso! Sem códigos e com acentuação corrigida.")
                 if not df_motivos_revisao.empty:
                     st.warning(f"{len(df_motivos_revisao)} ocorrência(s) com motivo novo, fora da lista oficial. Elas aparecem destacadas na tabela e também na aba 'Motivos para Revisão' do Excel.")
@@ -481,7 +485,7 @@ def run_streamlit_app():
                 col1, col2 = st.columns(2)
                 with col1:
                     st.info(f"**Total de Ocorrências Válidas:** {len(df_unique)}")
-                    st.caption(f"Duplicadas por Hospital+AIH+Valor removidas (mesma glosa com motivo levemente diferente).")
+                    st.caption(f"Duplicatas exatas de glosa removidas, preservando motivos distintos para o mesmo AIH/valor.")
                 with col2:
                     total = df_consolidado['Valor_Glosa'].sum()
                     st.warning(f"**Soma Total Consolidada:** R$ {total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))

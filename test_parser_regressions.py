@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from app import normalize_motivo, officialize_motivo, parse_qrp_bytes_to_records
+from app import (
+    normalize_motivo,
+    officialize_motivo,
+    parse_qrp_bytes_to_records,
+    drop_duplicate_glosa_records,
+)
 
 
 def parse_unique(path):
@@ -54,3 +59,17 @@ def test_eduardo_campos_reviewed_execucao_value_is_alta_a_pedido():
     rows = df[df['Motivo_Glosa'].eq('AIH BLOQUEADA POR ALTA A PEDIDO/OBITO/TRANSFERENCIA/EVASAO C/ 1 DIA')]
     assert round(rows['Valor_Glosa'].sum(), 2) == 1370.83
     assert 'DE EXECUÇÃO INVÁLIDA ( )' not in set(df['Motivo_Glosa'])
+
+
+def test_preserva_motivos_distintos_para_mesmo_aih_valor():
+    arquivo_paths = [
+        'glosas - 2026.04 (FEV)/Arquivos QRP/6 Restauracao.QRP',
+        'glosas - 2026.04 (FEV)/Arquivos QRP/OSS Eduardo Campos.QRP',
+        'glosas - 2026.04 (FEV)/Arquivos QRP/DGAR Geral de Areias.QRP',
+    ]
+    for arquivo in arquivo_paths:
+        df = pd.DataFrame(parse_qrp_bytes_to_records(Path(arquivo).read_bytes(), Path(arquivo).name))
+        df_correct = drop_duplicate_glosa_records(df)
+        df_wrong = df.drop_duplicates(subset=['Hospital', 'AIH', 'Valor_Glosa'], keep='first')
+        assert len(df_correct) >= len(df_wrong)
+        assert len(df_correct) != len(df_wrong)
