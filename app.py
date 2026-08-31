@@ -322,7 +322,7 @@ def _display_sidebar_logo():
     logo = Path('assets/combinado.png')
     if logo.exists():
         cols = st.sidebar.columns([0.5, 3, 0.5])
-        cols[1].image(str(logo), use_column_width=True)
+        cols[1].image(str(logo), width='stretch')
         st.sidebar.markdown('---')
 
 
