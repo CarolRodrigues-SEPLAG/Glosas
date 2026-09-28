@@ -1,4 +1,6 @@
 from pathlib import Path
+import io
+from openpyxl import load_workbook
 
 import pandas as pd
 
@@ -7,6 +9,8 @@ from app import (
     officialize_motivo,
     parse_qrp_bytes_to_records,
     drop_duplicate_glosa_records,
+    consolidate_records,
+    export_records_excel,
 )
 
 
@@ -29,6 +33,7 @@ def test_normalize_reviewed_motivos():
         'AIH REJEITADA NA IMPORTAÇÃO. VERIFIQUE PROTOCOLO': 'AIH REJEITADA NA IMPORTACAO',
         'TOTAL DE DIÁRIAS SUPERIOR AO PERÍODO DE INTERNAÇÃO NA INFORMADA': 'TOTAL DE DIARIAS SUPERIOR AO PERIODO DE INTERNACAO NA COMPETENCIA',
         'AIH BLOQUEADA POR PERMANÊNCIA A MENOR INJUSTIFICADAD': 'AIH BLOQUEADA POR PERMANENCIA A MENOR INJUSTIFICADA',
+        'AIH BLOQUEADA POR PERMANÊNCIA A MENOR INJUSTIFICADAI': 'AIH BLOQUEADA POR PERMANENCIA A MENOR INJUSTIFICADA',
     }
     for raw, expected in cases.items():
         motivo, recognized = officialize_motivo(normalize_motivo(raw))
@@ -115,3 +120,65 @@ def test_geral_de_areias_mantem_periodo_sobreposto_validado_separado():
     assert round(df_unique['Valor_Glosa'].sum(), 2) == 5738.16
     assert round(dupl['Valor_Glosa'].sum(), 2) == 1238.83
     assert round(sobrepostos['Valor_Glosa'].sum(), 2) == 439.69
+
+
+def make_qrp(*segments):
+    return b'\x00\x00'.join(s.encode('utf-16le') for s in segments)
+
+
+def test_metadata_and_equivalent_motivos_in_excel():
+    raw = make_qrp(
+        'Competência: 02/2026', 'CNES : DEFINITIVO',
+        'CNES : 0123456 - HOSPITAL TESTE',
+        '2626100000001', '0301060070',
+        'AIH BLOQUEADA POR PERMANÊNCIA A MENOR INJUSTIFICADAI', '4.249,78',
+        '2626100000002', '0301060070',
+        'AIH BLOQUEADA POR PERMANENCIA A MENOR INJUSTIFICADA', '1.961,98',
+    )
+    df = pd.DataFrame(parse_qrp_bytes_to_records(raw, 'teste.QRP'))
+    assert df['CNES'].tolist() == ['0123456', '0123456']
+    assert df['Competência'].tolist() == ['02/2026', '02/2026']
+    consolidated = consolidate_records(drop_duplicate_glosa_records(df))
+    assert len(consolidated) == 1
+    assert consolidated.iloc[0]['Status'] == 'Oficial'
+    assert round(consolidated.iloc[0]['Valor_Glosa'], 2) == 6211.76
+    # Verifica também a aba de revisão e os zeros iniciais no Excel.
+    unknown = df.iloc[[0]].copy()
+    unknown['Motivo_Glosa'] = 'MOTIVO AINDA DESCONHECIDO'
+    unknown['Motivo_Reconhecido'] = False
+    details = pd.concat([df, unknown], ignore_index=True)
+    wb = load_workbook(io.BytesIO(export_records_excel(consolidate_records(details), details)))
+    assert len(wb.sheetnames) == 3
+    for sheet in wb:
+        rows = list(sheet.values)
+        assert rows[1][rows[0].index('CNES')] == '0123456'
+        assert rows[1][rows[0].index('Competência')] == '02/2026'
+
+
+def test_dedup_preserves_different_units_and_months():
+    base = {'Hospital': 'HOSPITAL TESTE', 'CNES': '0123456', 'Competência': '01/2026',
+            'AIH': '2626100000001', 'Motivo_Glosa': 'TESTE',
+            'Valor_Glosa': 100.0, 'Motivo_Reconhecido': False}
+    df = pd.DataFrame([base, base, {**base, 'Competência': '02/2026'},
+                       {**base, 'CNES': '0123457'}])
+    unique = drop_duplicate_glosa_records(df)
+    assert len(unique) == 3
+    assert len(consolidate_records(unique)) == 3
+    assert unique['Valor_Glosa'].sum() == 300
+
+
+def test_missing_metadata_and_distinct_motivo():
+    raw = make_qrp('2626100000001', 'MOTIVO DESCONHECIDO', '10,00')
+    row = parse_qrp_bytes_to_records(raw, '02-2026.QRP')[0]
+    assert row['CNES'] == ''
+    assert row['Competência'] == ''
+    different = 'AIH BLOQUEADA POR PERMANENCIA A MAIOR INJUSTIFICADA'
+    assert normalize_motivo(different) == different
+
+
+def test_metadata_from_real_qrp():
+    path = Path('Exemplo QRP/Barão de Lucena.QRP')
+    records = parse_qrp_bytes_to_records(path.read_bytes(), path.name)
+    assert records
+    assert {r['CNES'] for r in records} == {'2427427'}
+    assert {r['Competência'] for r in records} == {'08/2025'}

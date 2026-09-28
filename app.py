@@ -151,7 +151,8 @@ def drop_duplicate_glosa_records(df):
         kind='mergesort'
     )
     df_unique = df_with_key.drop_duplicates(
-        subset=['Hospital', 'AIH', 'Valor_Glosa', '_Motivo_Dedup'],
+        subset=['Hospital', *[c for c in ['CNES', 'Competência'] if c in df_with_key],
+                'AIH', 'Valor_Glosa', '_Motivo_Dedup'],
         keep='first'
     )
     df_unique = df_unique.sort_values(by='_Original_Order', kind='mergesort')
@@ -232,7 +233,9 @@ def normalize_motivo(text):
     if 'AIH BLOQUEADA POR ALTA A PEDIDO' in t_ascii or 'AIH BLOQUEADA POR A PEDIDO' in t_ascii:
         return 'AIH BLOQUEADA POR ALTA A PEDIDO/ÓBITO/TRANSFERÊNCIA/EVASÃO C/ 1 DIA'
 
-    if 'AIH BLOQUEADA POR PERMANENCIA A MENOR INJUSTIFICADAD' in t_ascii:
+    # Alguns QRP acrescentam uma letra de controle ao final da descrição.
+    # Regra restrita a este motivo para não unir motivos apenas semelhantes.
+    if re.fullmatch(r'AIH BLOQUEADA POR PERMANENCIA A MENOR INJUSTIFICADA[A-Z]?', t_ascii):
         return 'AIH BLOQUEADA POR PERMANÊNCIA A MENOR INJUSTIFICADA'
 
     if 'PERIODOS DE INTERNA O SOBREPOSTOS NO MOVIMENTO' in t_ascii:
@@ -401,16 +404,12 @@ def parse_qrp_bytes_to_records(raw_bytes, filename):
         return records
 
     hospital_name = "HOSPITAL DESCONHECIDO"
-    for _, seg in segments:
-        if 'HOSPITAL' in seg.upper() or 'CNES' in seg.upper():
-            match = re.search(r'CNES\s*[:\-]?\s*\d+\s*-\s*([^\n\r]+)', seg, re.IGNORECASE)
-            if match:
-                hospital_name = match.group(1).strip()
-                break
-            match = re.search(r'\b\d{7}\s*-\s*(HOSPITAL.*)', seg, re.IGNORECASE)
-            if match:
-                hospital_name = match.group(1).strip()
-                break
+    cnes = ''
+    competencia = ''
+    hospital_regex = re.compile(
+        r'(?:\bCNES\s*[:\-]?\s*)(\d{7})\s*-\s*([^\n\r]+)', re.IGNORECASE)
+    hospital_fallback = re.compile(r'\b(\d{7})\s*-\s*(HOSPITAL.*)', re.IGNORECASE)
+    competencia_regex = re.compile(r'\bCOMPETENCIA\s*[:\-]?\s*(0?[1-9]|1[0-2])/(\d{4})\b')
 
     ai_regex = re.compile(r'(?<!\d)(\d{13,14})(?!\d)')
     currency_regex = re.compile(r'\d{1,3}(?:\.\d{3})*,\d{2}')
@@ -431,6 +430,14 @@ def parse_qrp_bytes_to_records(raw_bytes, filename):
         return ai_regex.match(text.strip())
 
     for index, (_, seg) in enumerate(segments):
+        hospital_match = hospital_regex.search(seg) or hospital_fallback.search(seg)
+        if hospital_match:
+            cnes, hospital_name = hospital_match.groups()
+            hospital_name = hospital_name.strip()
+        competencia_match = competencia_regex.search(remove_accents(seg.upper()))
+        if competencia_match:
+            month, year = competencia_match.groups()
+            competencia = f'{int(month):02d}/{year}'
         aih_match = aih_at_segment_start(seg)
         if not aih_match:
             continue
@@ -479,6 +486,8 @@ def parse_qrp_bytes_to_records(raw_bytes, filename):
         records.append({
             'Arquivo': filename,
             'Hospital': hospital_name,
+            'CNES': cnes,
+            'Competência': competencia,
             'AIH': aih,
             'Motivo_Glosa': motivo_text,
             'Valor_Glosa': valor,
@@ -486,6 +495,30 @@ def parse_qrp_bytes_to_records(raw_bytes, filename):
         })
 
     return records
+
+
+def consolidate_records(df_unique):
+    consolidated = df_unique.groupby(
+        ['Hospital', 'CNES', 'Competência', 'Motivo_Glosa'], as_index=False, dropna=False
+    ).agg(Valor_Glosa=('Valor_Glosa', 'sum'),
+          Motivo_Reconhecido=('Motivo_Reconhecido', 'all'))
+    consolidated = consolidated[consolidated['Valor_Glosa'] > 0].copy()
+    consolidated = consolidated.sort_values(by=['Hospital', 'Valor_Glosa'], ascending=[True, False])
+    consolidated['Status'] = consolidated['Motivo_Reconhecido'].map({True: 'Oficial', False: 'Novo'})
+    return consolidated
+
+
+def export_records_excel(df_consolidado, df_unique):
+    output = io.BytesIO()
+    details = ['Arquivo', 'Hospital', 'CNES', 'Competência', 'AIH', 'Motivo_Glosa', 'Valor_Glosa']
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_consolidado[['Hospital', 'CNES', 'Competência', 'Motivo_Glosa', 'Status', 'Valor_Glosa']].to_excel(
+            writer, index=False, sheet_name='Consolidado')
+        df_unique[details].to_excel(writer, index=False, sheet_name='Detalhamento das AIHs')
+        review = df_unique[df_unique['Motivo_Reconhecido'] == False]
+        if not review.empty:
+            review[details].to_excel(writer, index=False, sheet_name='Motivos para Revisão')
+    return output.getvalue()
 
 def run_streamlit_app():
     st.set_page_config(page_title="Consolidador de Glosas", page_icon="🏥", layout="wide")
@@ -529,13 +562,9 @@ def run_streamlit_app():
                 df_unique = drop_duplicate_glosa_records(df)
                 df_motivos_revisao = df_unique[df_unique['Motivo_Reconhecido'] == False]
 
-                df_consolidado = df_unique.groupby(['Hospital', 'Motivo_Glosa'], as_index=False).agg(
-                    Valor_Glosa=('Valor_Glosa', 'sum'),
-                    Motivo_Reconhecido=('Motivo_Reconhecido', 'all')
-                )
-                df_consolidado = df_consolidado[df_consolidado['Valor_Glosa'] > 0]
-                df_consolidado = df_consolidado.sort_values(by=['Hospital', 'Valor_Glosa'], ascending=[True, False])
-                df_consolidado['Status'] = df_consolidado['Motivo_Reconhecido'].map({True: 'Oficial', False: 'Novo'})
+                df_consolidado = consolidate_records(df_unique)
+                if df_unique[['CNES', 'Competência']].eq('').any().any():
+                    st.warning('Alguns registros estão sem CNES ou competência no cabeçalho do QRP. Esses campos ficaram em branco; confira os arquivos de origem.')
 
                 # Formatação financeira PT-BR
                 df_consolidado['Valor Formatado'] = df_consolidado['Valor_Glosa'].apply(
@@ -550,28 +579,19 @@ def run_streamlit_app():
                 col1, col2 = st.columns(2)
                 with col1:
                     st.info(f"**Total de Ocorrências Válidas:** {len(df_unique)}")
-                    st.caption("Duplicatas por Hospital+AIH+Valor removidas, mantendo o primeiro motivo. Pares validados pela equipe são separados quando aplicável.")
+                    st.caption("Duplicatas por Hospital+CNES+Competência+AIH+Valor removidas, mantendo o primeiro motivo. Pares validados pela equipe são separados quando aplicável.")
                 with col2:
                     total = df_consolidado['Valor_Glosa'].sum()
                     st.warning(f"**Soma Total Consolidada:** R$ {total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
                 
-                df_visualizacao = df_consolidado[['Hospital', 'Motivo_Glosa', 'Status', 'Valor Formatado']]
+                df_visualizacao = df_consolidado[['Hospital', 'CNES', 'Competência', 'Motivo_Glosa', 'Status', 'Valor Formatado']]
                 st.dataframe(
                     df_visualizacao.style.apply(highlight_new_motivos, axis=1),
                     use_container_width=True
                 )
                 
                 # Geração do arquivo Excel
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_consolidado[['Hospital', 'Motivo_Glosa', 'Status', 'Valor_Glosa']].to_excel(writer, index=False, sheet_name='Consolidado')
-                    df_unique[['Arquivo', 'Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(
-                        writer, index=False, sheet_name='Detalhamento das AIHs')
-                    if not df_motivos_revisao.empty:
-                        df_motivos_revisao[['Arquivo', 'Hospital', 'AIH', 'Motivo_Glosa', 'Valor_Glosa']].to_excel(
-                            writer, index=False, sheet_name='Motivos para Revisão')
-                
-                processed_data = output.getvalue()
+                processed_data = export_records_excel(df_consolidado, df_unique)
                 
                 st.download_button(
                     label="📥 Baixar Planilha Consolidada (.xlsx)",
