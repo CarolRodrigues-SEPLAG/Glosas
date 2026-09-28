@@ -19,6 +19,19 @@ def clean_qrp_text(raw_bytes):
 
 
 def clean_motivo_text(text):
+    # Referências a portarias fazem parte do motivo, ao contrário dos códigos
+    # de procedimentos/competências entre parênteses.
+    references = []
+
+    def protect_reference(match):
+        token = 'REFERENCIANORMATIVA' + ('Z' * (len(references) + 1))
+        references.append((token, match.group(0)))
+        return token
+
+    text = re.sub(r'\bPT\s+\d+\s+DE\s+\d{2}/\d{2}/(?:\d{4}|\d{2})\b',
+                  protect_reference, text, flags=re.IGNORECASE)
+    # Retira também uma letra residual do QRP imediatamente após o código.
+    text = re.sub(r'\(\s*\d[\d\s/.,-]*\)[A-Za-z]?(?![A-Za-z])', ' ', text)
     # Removido: text = re.sub(r'\([^)]*\)', ' ', text)  # Agora mantemos os códigos entre parênteses
     text = re.sub(r'\b\d{2}/\d{2}/\d{4}\b', ' ', text)
     text = re.sub(r'\b\d{1,3}(?:\.\d{3})*,\d{2}\b', ' ', text)
@@ -32,12 +45,15 @@ def clean_motivo_text(text):
     text = re.sub(r'\([^)]*\)', lambda m: m.group(0) if 'DOC:' in m.group(0).upper() else m.group(0), text)
     text = re.sub(r'\(\s*DOC\s*\)', ' ', text, flags=re.IGNORECASE)
     text = re.sub(r'\(\s*\)', ' ', text)
+    text = re.sub(r'\([\s/.,-]*\)[A-Za-z]?(?![A-Za-z])', ' ', text)
     text = re.sub(r'[^A-Za-zÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙçãõáéíóúâêîôûàèìòù\s\-\/\.()]+', ' ', text)  # Adicionado () para manter parênteses
     text = re.sub(r'\s+', ' ', text).strip()
     text = re.sub(r'\s+[A-Za-zÇÃÕÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙçãõáéíóúâêîôûàèìòù]$', '', text)
     text = re.sub(r'[\s\-\./,;:]+$', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     text = re.sub(r'\s+OU\s*$', '', text, flags=re.IGNORECASE)
+    for token, reference in references:
+        text = text.replace(token, reference)
     return text
 
 

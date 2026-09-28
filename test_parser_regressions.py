@@ -11,6 +11,7 @@ from app import (
     drop_duplicate_glosa_records,
     consolidate_records,
     export_records_excel,
+    clean_motivo_text,
 )
 
 
@@ -182,3 +183,31 @@ def test_metadata_from_real_qrp():
     assert records
     assert {r['CNES'] for r in records} == {'2427427'}
     assert {r['Competência'] for r in records} == {'08/2025'}
+
+
+def test_numeric_codes_are_removed_without_losing_normative_reference():
+    cases = {
+        'QUANTIDADE DE OPM SUPERIOR AO PERMITIDO (0404030050/0702050482/6)':
+            ('QUANTIDADE DE OPM SUPERIOR AO PERMITIDO', True),
+        'QUANTIDADE DE OPM SUPERIOR AO PERMITIDO (0404030050/0702050482/6)S':
+            ('QUANTIDADE DE OPM SUPERIOR AO PERMITIDO', True),
+        'QUANTIDADE DE OPM SUPERIOR AO PERMITIDO ( / / )S':
+            ('QUANTIDADE DE OPM SUPERIOR AO PERMITIDO', True),
+        'AIH BLOQUEADA POR DUPLICIDADE DE ACORDO COM PT 10 DE 06/01/14(ORTOPEDIA)':
+            ('AIH BLOQUEADA POR DUPLICIDADE DE ACORDO COM PT 10 DE 06/01/14(ORTOPEDIA)', False),
+    }
+    for raw, expected in cases.items():
+        assert officialize_motivo(normalize_motivo(clean_motivo_text(raw))) == expected
+
+
+def test_opm_normalization_for_any_hospital():
+    rows = []
+    for cnes, hospital in [('0000477', 'HOSPITAL A'), ('0000426', 'HOSPITAL B')]:
+        raw = make_qrp('Competência: 07/2026', f'CNES : {cnes} - {hospital}',
+                       '2626101472995', 'QUANTIDADE DE OPM SUPERIOR AO PERMITIDO (0404030050/0702050482/6)S',
+                       '4.915,21')
+        rows.extend(parse_qrp_bytes_to_records(raw, 'teste.QRP'))
+    result = consolidate_records(drop_duplicate_glosa_records(pd.DataFrame(rows)))
+    assert len(result) == 2
+    assert set(result['Status']) == {'Oficial'}
+    assert set(result['Motivo_Glosa']) == {'QUANTIDADE DE OPM SUPERIOR AO PERMITIDO'}
